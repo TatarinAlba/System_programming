@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 struct DynamicArray {
     int capacity;
@@ -66,7 +67,7 @@ struct DynamicArray mergeSort(struct DynamicArray array_to_be_sorted) {
     return sorted_array;
 }
 
-struct DynamicArray file_to_array(const char* file_name) {
+struct DynamicArray fileToArray(const char* file_name) {
     FILE *ptr = fopen(file_name, "r");
     if (ptr == NULL) {
         printf("File does not exists\n");
@@ -122,7 +123,58 @@ struct DynamicArray file_to_array(const char* file_name) {
     }
 }
 
-int main () {
+void outputArray(struct DynamicArray* my_array) {
+    printf("Number of elements is %d\n", my_array->size);
+    for (int i = 0; i < my_array->size; i++) {
+        printf("%d ", my_array->head[i]);
+    }
+    printf("\n");
+}
 
+int main (int argc, char* argv[]) {
+    struct DynamicArray* files = (struct DynamicArray*) malloc((argc - 1) * sizeof (struct DynamicArray));
+    // Taking numbers and sorting them in dynamic array, after that storing the result in 
+    // 2d array 
+    for (int i = 0; i < argc - 1; i++) {
+        struct DynamicArray output_array = fileToArray(argv[i + 1]);
+        files[i] = mergeSort(output_array);
+        free(output_array.head);
+    } 
+    // Making merge for all files (merging algorithm)
+    int anchor = 0;
+    int number_of_arrays = argc - 1;
+    int first_array = 0, second_array = 1;
+    while (number_of_arrays > 1) {
+        struct DynamicArray resulted_array = merge(&files[first_array], &files[second_array]);
+        free(files[first_array].head);
+        free(files[second_array].head);
+        files[anchor++] = resulted_array;
+        first_array += 2;
+        second_array += 2;
+        if (first_array == number_of_arrays) {
+            number_of_arrays /= 2;
+            first_array = 0;
+            second_array = 1;
+            anchor = 0;
+        }
+        else if (second_array == number_of_arrays) {
+            resulted_array = merge(&files[anchor - 1], &files[first_array]); 
+            free(files[anchor - 1].head);
+            free(files[first_array].head);
+            files[anchor - 1] = resulted_array;
+            number_of_arrays /= 2;
+            first_array = 0;
+            second_array = 1;
+            anchor = 0;
+        }
+    }
+    if (number_of_arrays == 1) {
+        FILE *output_file = fopen("answer.txt", "w");
+        for (int i = 0; i < files[0].size; i++) {
+            fprintf(output_file, "%d ", files[0].head[i]);
+        }
+        fclose(output_file);
+    }
+    free(files[0].head);
     return 0;
 }
