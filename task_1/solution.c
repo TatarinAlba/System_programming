@@ -15,6 +15,9 @@ struct my_context
 {
     char *name;
     struct DynamicArray* my_array;
+    long long work_time_lim;
+    struct timespec start_time;
+    struct timespec end_time;
 };
 
 struct DynamicArray
@@ -83,19 +86,49 @@ mergeSort(struct DynamicArray array_to_be_sorted, struct my_context* ctx, struct
     // I deleted all output functions because they make programm less performant
     // printf("%s: yield\n", ctx->name);
     // printf("%s: switch count %lld\n", ctx->name, coro_switch_count(c));
-    coro_yield();
+    clock_gettime(CLOCK_MONOTONIC, &ctx->end_time);
+    long long elapsed_time = (ctx->end_time.tv_sec - ctx->start_time.tv_sec) * 1000000LL +
+                 (ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1000LL;
+    if (elapsed_time > ctx->work_time_lim) {
+        // printf("Time passed:%d microseconds\n", elapsed_time);
+        coro_yield();
+        clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
+    } 
+    // else {
+    //     // printf("No need to switch\n");
+    // }
     struct DynamicArray new_left_arr = mergeSort(left_arr, ctx, c);
     // I deleted all output functions because they make programm less performant
     // printf("%s: yield\n", ctx->name);
     // printf("%s: switch count %lld\n", ctx->name, coro_switch_count(c));
-    coro_yield();
+    clock_gettime(CLOCK_MONOTONIC, &ctx->end_time);
+    elapsed_time = (ctx->end_time.tv_sec - ctx->start_time.tv_sec) * 1000000LL +
+        (ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1000LL;
+    if (elapsed_time > ctx->work_time_lim) {
+        // printf("Time passed:%d microseconds\n", elapsed_time);
+        coro_yield();
+        clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
+    } 
+    // else {
+    //     // printf("No need to switch\n");
+    // }
     struct DynamicArray new_right_arr = mergeSort(right_arr, ctx, c);
     free(left_arr.head);
     free(right_arr.head);
     // I deleted all output functions because they make programm less performant
     // printf("%s: yield\n", ctx->name);
     // printf("%s: switch count %lld\n", ctx->name, coro_switch_count(c));
-    coro_yield();
+    clock_gettime(CLOCK_MONOTONIC, &ctx->end_time);
+    elapsed_time = (ctx->end_time.tv_sec - ctx->start_time.tv_sec) * 1000000LL +
+        (ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1000LL;
+    if (elapsed_time > ctx->work_time_lim) {
+        // printf("Time passed:%d microseconds\n", elapsed_time);
+        coro_yield();
+        clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
+    }
+    // } else {
+    //     // printf("No need to switch\n");
+    // }
     struct DynamicArray sorted_array = merge(&new_left_arr, &new_right_arr);
     // I deleted all output functions because they make programm less performant
     // printf("%s: yield\n", ctx->name);
@@ -171,9 +204,10 @@ fileToArray(const char *file_name)
 }
 
 static struct my_context *
-my_context_new(const char *name, struct DynamicArray* my_array)
+my_context_new(const char *name, struct DynamicArray* my_array, long long work_time_lim)
 {
     struct my_context *ctx = malloc(sizeof(*ctx));
+    ctx -> work_time_lim = work_time_lim; 
     ctx->name = strdup(name);
     ctx->my_array = my_array;
     return ctx;
@@ -198,8 +232,8 @@ coroutine_func_f(void *context)
     struct coro *this = coro_this();
     struct my_context *ctx = context;
     char *name = ctx->name;
-    // I deleted all output functions because they make programm less performant
     printf("Started coroutine %s\n", name);
+    clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
     struct DynamicArray resulted_array = mergeSort(*(ctx->my_array), ctx, this);
     free(ctx->my_array->head);
     *(ctx->my_array) = resulted_array;
@@ -213,16 +247,16 @@ int main(const int argc, const char **argv)
     clock_t start_time;
     double cpu_time_used;
     start_time = clock();
-    struct DynamicArray files[argc - 1];
+    struct DynamicArray files[argc - 2];
     /* Initialize our coroutine global cooperative scheduler. */
     coro_sched_init();
-    for (int i = 0; i < argc - 1; i++)
+    for (int i = 0; i < argc - 2; i++)
     { 
         files[i] = fileToArray(argv[i + 1]);
     }
     /* Start several coroutines. */
     
-    for (int i = 0; i < argc - 1; ++i)
+    for (int i = 0; i < argc - 2; ++i)
     {
         /*
          * The coroutines can take any 'void *' interpretation of which
@@ -235,7 +269,7 @@ int main(const int argc, const char **argv)
          * I have to copy the name. Otherwise all the coroutines would
          * have the same name when they finally start.
          */
-        coro_new(coroutine_func_f, my_context_new(name, &files[i]));
+        coro_new(coroutine_func_f, my_context_new(name, &files[i], (long long) atoi(argv[argc - 1]) / (argc - 2)));
     }
     /* Wait for all the coroutines to end. */
     struct coro *c;
@@ -254,7 +288,7 @@ int main(const int argc, const char **argv)
     /* IMPLEMENT MERGING OF THE SORTED ARRAYS HERE. */
     // Making merge for all files (merging algorithm)
     int anchor = 0;
-    int number_of_arrays = argc - 1;
+    int number_of_arrays = argc - 2;
     int first_array = 0, second_array = 1;
     while (number_of_arrays > 1)
     {
