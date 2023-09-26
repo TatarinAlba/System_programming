@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "libcoro.h"
 
 struct DynamicArray
@@ -79,20 +80,26 @@ mergeSort(struct DynamicArray array_to_be_sorted, struct my_context* ctx, struct
     }
     right_arr.head = container;
     right_arr.size = right_arr.capacity = array_to_be_sorted.size - (int)(array_to_be_sorted.size / 2);
-    printf("%s: yield\n", ctx->name);
+    // I deleted all output functions because they make programm less performant
+    // printf("%s: yield\n", ctx->name);
+    // printf("%s: switch count %lld\n", ctx->name, coro_switch_count(c));
     coro_yield();
-    printf("%s: switch count %lld\n", ctx->name, coro_switch_count(c));
     struct DynamicArray new_left_arr = mergeSort(left_arr, ctx, c);
-    printf("%s: yield\n", ctx->name);
+    // I deleted all output functions because they make programm less performant
+    // printf("%s: yield\n", ctx->name);
+    // printf("%s: switch count %lld\n", ctx->name, coro_switch_count(c));
     coro_yield();
-    printf("%s: switch count %lld\n", ctx->name, coro_switch_count(c));
     struct DynamicArray new_right_arr = mergeSort(right_arr, ctx, c);
     free(left_arr.head);
     free(right_arr.head);
-    printf("%s: yield\n", ctx->name);
+    // I deleted all output functions because they make programm less performant
+    // printf("%s: yield\n", ctx->name);
+    // printf("%s: switch count %lld\n", ctx->name, coro_switch_count(c));
     coro_yield();
-    printf("%s: switch count %lld\n", ctx->name, coro_switch_count(c));
     struct DynamicArray sorted_array = merge(&new_left_arr, &new_right_arr);
+    // I deleted all output functions because they make programm less performant
+    // printf("%s: yield\n", ctx->name);
+    // printf("%s: switch count %lld\n", ctx->name, coro_switch_count(c));
     free(new_left_arr.head);
     free(new_right_arr.head);
     return sorted_array;
@@ -191,17 +198,21 @@ coroutine_func_f(void *context)
     struct coro *this = coro_this();
     struct my_context *ctx = context;
     char *name = ctx->name;
+    // I deleted all output functions because they make programm less performant
     printf("Started coroutine %s\n", name);
-    printf("%s: switch count %lld\n", name, coro_switch_count(this));
     struct DynamicArray resulted_array = mergeSort(*(ctx->my_array), ctx, this);
     free(ctx->my_array->head);
     *(ctx->my_array) = resulted_array;
+    printf("%s: switch count %lld\n", name, coro_switch_count(this));
     my_context_delete(ctx);
     return 0;
 }
 
 int main(const int argc, const char **argv)
 {
+    clock_t start_time;
+    double cpu_time_used;
+    start_time = clock();
     struct DynamicArray files[argc - 1];
     /* Initialize our coroutine global cooperative scheduler. */
     coro_sched_init();
@@ -235,7 +246,7 @@ int main(const int argc, const char **argv)
          * do anything you want. Like check its exit status, for
          * example. Don't forget to free the coroutine afterwards.
          */
-        printf("Finished %d\n", coro_status(c));
+        // printf("Finished %d\n", coro_status(c));
         coro_delete(c);
     }
     /* All coroutines have finished. */
@@ -282,5 +293,7 @@ int main(const int argc, const char **argv)
         fclose(output_file);
     }
     free(files[0].head);
+    cpu_time_used = ((double)(clock() - start_time)) / CLOCKS_PER_SEC;
+    printf("Time taken by program: %f seconds\n", cpu_time_used);
     return 0;
 }
