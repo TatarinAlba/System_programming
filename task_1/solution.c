@@ -16,6 +16,7 @@ struct my_context
     char *name;
     struct Pool *my_pool;
     long long work_time_lim;
+    double work_time; 
     struct timespec start_time;
     struct timespec end_time;
 };
@@ -97,6 +98,8 @@ mergeSort(struct DynamicArray array_to_be_sorted, struct my_context *ctx, struct
                              (ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1000LL;
     if (elapsed_time > ctx->work_time_lim)
     {
+        ctx->work_time += (ctx->end_time.tv_sec - ctx->start_time.tv_sec) +
+            (double)(ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1e9;
         coro_yield();
         clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
     }
@@ -106,6 +109,8 @@ mergeSort(struct DynamicArray array_to_be_sorted, struct my_context *ctx, struct
                    (ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1000LL;
     if (elapsed_time > ctx->work_time_lim)
     {
+        ctx->work_time += (ctx->end_time.tv_sec - ctx->start_time.tv_sec) +
+            (double)(ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1e9;
         coro_yield();
         clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
     }
@@ -117,6 +122,8 @@ mergeSort(struct DynamicArray array_to_be_sorted, struct my_context *ctx, struct
                    (ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1000LL;
     if (elapsed_time > ctx->work_time_lim)
     {
+        ctx->work_time += (ctx->end_time.tv_sec - ctx->start_time.tv_sec) +
+            (double)(ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1e9;
         coro_yield();
         clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
     }
@@ -245,7 +252,11 @@ coroutine_func_f(void *context)
         free(array_to_sort->head);
         *(array_to_sort) = resulted_array;
     }
+    clock_gettime(CLOCK_MONOTONIC, &ctx->end_time);
+    ctx->work_time += (ctx->end_time.tv_sec - ctx->start_time.tv_sec) +
+        (double)(ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1e9;
     printf("%s: switch count %lld\n", name, coro_switch_count(this));
+    printf("%s: Time taken for execution %f seconds.\n", name, ctx->work_time);
     my_context_delete(ctx);
     return 0;
 }
@@ -287,7 +298,7 @@ int main(const int argc, const char **argv)
          * I have to copy the name. Otherwise all the coroutines would
          * have the same name when they finally start.
          */
-        coro_new(coroutine_func_f, my_context_new(name, &my_pool, (long long)atoi(argv[argc - 1]) / courutines_number));
+        coro_new(coroutine_func_f, my_context_new(name, &my_pool, (long long)atoi(argv[argc - 2]) / courutines_number));
     }
     /* Wait for all the coroutines to end. */
     struct coro *c;
