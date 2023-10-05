@@ -204,6 +204,7 @@ my_context_new(const char *name, struct Pool *my_pool, long long work_time_lim)
     struct my_context *ctx = malloc(sizeof(*ctx));
     ctx->work_time_lim = work_time_lim;
     ctx->name = strdup(name);
+    ctx->work_time = 0.0;
     ctx->my_pool = my_pool;
     return ctx;
 }
@@ -227,17 +228,18 @@ coroutine_func_f(void *context)
     struct my_context *ctx = context;
     char *name = ctx->name;
     printf("Started coroutine %s\n", name);
+    clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
     while (ctx->my_pool->is_empty != true)
     {
-        clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
         while (ctx->my_pool->muted)
         {
             printf("Sorry, we should wait\n");
             coro_yield(); // if muted, give control to another courutines
+            clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
         }
         if (ctx->my_pool->last_index == ctx->my_pool->size)
         {
-            printf("%s: Nothing to sort more. Exeting...\n", name);
+            printf("%s: Nothing to sort more. Exiting...\n", name);
             ctx->my_pool->is_empty = true;
             break;
         }
