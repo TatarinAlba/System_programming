@@ -16,7 +16,7 @@ struct my_context
     char *name;
     struct Pool *my_pool;
     long long work_time_lim;
-    double work_time; 
+    double work_time;
     struct timespec start_time;
     struct timespec end_time;
 };
@@ -24,7 +24,6 @@ struct my_context
 struct Pool
 {
     struct DynamicArray *files;
-    bool muted;
     bool is_empty;
     int last_index;
     int size;
@@ -99,7 +98,7 @@ mergeSort(struct DynamicArray array_to_be_sorted, struct my_context *ctx, struct
     if (elapsed_time > ctx->work_time_lim)
     {
         ctx->work_time += (ctx->end_time.tv_sec - ctx->start_time.tv_sec) +
-            (double)(ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1e9;
+                          (double)(ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1e9;
         coro_yield();
         clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
     }
@@ -110,7 +109,7 @@ mergeSort(struct DynamicArray array_to_be_sorted, struct my_context *ctx, struct
     if (elapsed_time > ctx->work_time_lim)
     {
         ctx->work_time += (ctx->end_time.tv_sec - ctx->start_time.tv_sec) +
-            (double)(ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1e9;
+                          (double)(ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1e9;
         coro_yield();
         clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
     }
@@ -123,7 +122,7 @@ mergeSort(struct DynamicArray array_to_be_sorted, struct my_context *ctx, struct
     if (elapsed_time > ctx->work_time_lim)
     {
         ctx->work_time += (ctx->end_time.tv_sec - ctx->start_time.tv_sec) +
-            (double)(ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1e9;
+                          (double)(ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1e9;
         coro_yield();
         clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
     }
@@ -231,12 +230,6 @@ coroutine_func_f(void *context)
     clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
     while (ctx->my_pool->is_empty != true)
     {
-        while (ctx->my_pool->muted)
-        {
-            printf("Sorry, we should wait\n");
-            coro_yield(); // if muted, give control to another courutines
-            clock_gettime(CLOCK_MONOTONIC, &ctx->start_time);
-        }
         if (ctx->my_pool->last_index == ctx->my_pool->size)
         {
             printf("%s: Nothing to sort more. Exiting...\n", name);
@@ -247,16 +240,14 @@ coroutine_func_f(void *context)
         {
             printf("%s: We found more buckets to sort. Let's do it.\n", name);
         }
-        ctx->my_pool->muted = true; // avoiding racing condition
         struct DynamicArray *array_to_sort = &ctx->my_pool->files[ctx->my_pool->last_index++];
-        ctx->my_pool->muted = false;
         struct DynamicArray resulted_array = mergeSort(*array_to_sort, ctx, this);
         free(array_to_sort->head);
         *(array_to_sort) = resulted_array;
     }
     clock_gettime(CLOCK_MONOTONIC, &ctx->end_time);
     ctx->work_time += (ctx->end_time.tv_sec - ctx->start_time.tv_sec) +
-        (double)(ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1e9;
+                      (double)(ctx->end_time.tv_nsec - ctx->start_time.tv_nsec) / 1e9;
     printf("%s: switch count %lld\n", name, coro_switch_count(this));
     printf("%s: Time taken for execution %f seconds.\n", name, ctx->work_time);
     my_context_delete(ctx);
@@ -285,7 +276,6 @@ int main(const int argc, const char **argv)
     my_pool.files = my_files;
     my_pool.size = argc - 3;
     my_pool.is_empty = false;
-    my_pool.muted = false;
     my_pool.last_index = 0;
     for (int i = 0; i < courutines_number; ++i)
     {
