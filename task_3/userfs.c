@@ -172,13 +172,11 @@ ufs_write(int fd, const char *buf, size_t size)
 			struct block* curr_block = file_desc->curr_block;
 			size_t counter = size;
 			int* pos_p = &file_desc->pos_p;
-			int* block_p = &file_desc->block_p;
 			int buff_p = 0; 
 			while (counter > 0) {
 				curr_block->memory[(*pos_p)++] = buf[buff_p++];
 				counter--;
 				if (*pos_p >= BLOCK_SIZE) {
-					*block_p++;
 					*pos_p = 0;
 					if (curr_block->next == NULL) {
 						new_block_created = 1;
@@ -194,7 +192,7 @@ ufs_write(int fd, const char *buf, size_t size)
 					curr_block = curr_block->next;
 				} 
 			} 
-			if (new_block_created || file_desc->file->last_block == curr_block && file_desc->pos_p > file_desc->file->last_symbol_at) {
+			if (new_block_created || (file_desc->file->last_block == curr_block && file_desc->pos_p > file_desc->file->last_symbol_at)) {
 				file_desc->file->last_symbol_at = *pos_p;
 				file_desc->file->last_block->occupied = *pos_p;
 			}
