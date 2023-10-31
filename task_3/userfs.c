@@ -44,7 +44,11 @@ struct file {
 	struct file *next;
 	struct file *prev;
 
-	/* PUT HERE OTHER MEMBERS */
+	/* Checking if current file was deleted 1 - yes. 0 - no.*/
+	short int is_ghost;
+	
+	int block_count;
+	int last_symbol_at;
 };
 
 /** List of all files. */
@@ -52,9 +56,11 @@ static struct file *file_list = NULL;
 
 struct filedesc {
 	struct file *file;
-
+	struct block* curr_block;
+	int block_p;
+	int pos_p;
 	/* PUT HERE OTHER MEMBERS */
-	int file_desc_value;
+
 };
 
 /**
@@ -63,7 +69,6 @@ struct filedesc {
  * closed, its place in this array is set to NULL and can be
  * taken by next ufs_open() call.
  */
-//TODO: IMplement this definition
 static struct filedesc **file_descriptors = NULL;
 static int file_descriptor_count = 0;
 static int file_descriptor_capacity = 0;
@@ -84,12 +89,11 @@ initialize_fd(struct file* file)
 		file_descriptors = malloc(sizeof(struct filedesc*));
 	} else if (file_descriptor_capacity <= file_descriptor_count) {
 		file_descriptor_capacity *= 2;
-		file_descriptors = realloc(file_descriptors, file_descriptor_capacity);
+		file_descriptors = realloc(file_descriptors, file_descriptor_capacity * sizeof(struct filedesc*));
 	}
-	file_descriptors[file_descriptor_count] = malloc(sizeof(struct filedesc));
-	file_descriptors[file_descriptor_count]->file = file;
-	file_descriptors[file_descriptor_count]->file_desc_value = file_descriptor_count + 1;
-	return ++file_descriptor_count;
+	file_descriptors[file_descriptor_count] = calloc(sizeof(struct filedesc), 1);
+	file_descriptors[file_descriptor_count++]->file = file;
+	return file_descriptor_count;
 }
 
 
@@ -102,7 +106,7 @@ int
 create_file(const char* new_file_name)  
 {
 	struct file* new_file = calloc(sizeof(struct file), 1);
-	size_t filename_size = strlen(new_file_name);
+	size_t filename_size = strlen(new_file_name) + 1;
 	new_file->name = malloc(sizeof(char) * filename_size);
 	strcpy(new_file->name, new_file_name);
 	int fd = initialize_fd(new_file);
@@ -137,6 +141,7 @@ ufs_open(const char *filename, int flags)
 			int fd = initialize_fd(curr_file);
 			return fd;
 		}
+		curr_file = curr_file->next;
 	}
 	if (flags == UFS_CREATE) {
 		return create_file(filename);
@@ -151,49 +156,104 @@ ufs_open(const char *filename, int flags)
 ssize_t
 ufs_write(int fd, const char *buf, size_t size)
 {
-	/* IMPLEMENT THIS FUNCTION */
-	(void)fd;
-	(void)buf;
-	(void)size;
-	ufs_error_code = UFS_ERR_NOT_IMPLEMENTED;
+	if (fd <= file_descriptor_count && fd > 0 && file_descriptors[fd - 1] != NULL) {
+		struct filedesc* file_desc = file_descriptors[fd - 1];
+		int new_block_created = 0;
+		if (file_desc->block_p * BLOCK_SIZE + file_desc->pos_p + size <= MAX_FILE_SIZE) {
+			if (file_desc->file->block_list == NULL) {
+				file_desc->file->block_list = calloc(sizeof(struct block), 1);
+				file_desc->file->block_list->memory = malloc(BLOCK_SIZE);
+				file_desc->file->last_block = file_desc->file->block_list;
+				new_block_created = 1;
+			}
+			if (file_desc->curr_block == NULL) {
+				file_desc->curr_block = file_desc->file->block_list;
+			}
+			struct block* curr_block = file_desc->curr_block;
+			size_t counter = size;
+			int* pos_p = &file_desc->pos_p;
+			int* block_p = &file_desc->block_p;
+			int buff_p = 0; 
+			while (counter > 0) {
+				curr_block->memory[(*pos_p)++] = buf[buff_p++];
+				counter--;
+				if (*pos_p >= BLOCK_SIZE) {
+					*block_p++;
+					*pos_p = 0;
+					if (curr_block->next == NULL) {
+						new_block_created = 1;
+						file_desc->file->block_count++;
+						curr_block->occupied = BLOCK_SIZE;
+						curr_block->next = calloc(sizeof(struct block), 1);
+						curr_block->next->prev = curr_block;
+						file_desc->file->last_block = curr_block->next;
+						curr_block->next->memory = malloc(BLOCK_SIZE);
+					} 
+					file_desc->block_p++;
+					file_desc->curr_block = curr_block->next;
+					curr_block = curr_block->next;
+				} 
+			} 
+			if (new_block_created || file_desc->file->last_block == curr_block && file_desc->pos_p > file_desc->file->last_symbol_at) {
+				file_desc->file->last_symbol_at = *pos_p;
+				file_desc->file->last_block->occupied = *pos_p;
+			}
+			return size;
+		} else {
+			ufs_error_code = UFS_ERR_NO_MEM;
+			return -1;
+		}
+	}
+	ufs_error_code = UFS_ERR_NO_FILE;
 	return -1;
 }
 
 ssize_t
 ufs_read(int fd, char *buf, size_t size)
 {
-	/* IMPLEMENT THIS FUNCTION */
-	(void)fd;
-	(void)buf;
-	(void)size;
-	ufs_error_code = UFS_ERR_NOT_IMPLEMENTED;
+	if (fd <= file_descriptor_count && fd > 0 && file_descriptors[fd - 1] != NULL) {
+		struct filedesc* file_desc = file_descriptors[fd - 1];
+		int buf_p = 0;
+		int readb = 0;
+		if (file_desc->curr_block == NULL) {
+			file_desc->curr_block = file_desc->file->block_list;
+		}
+		while ((file_desc->file->block_count > file_desc->block_p || 
+			file_desc->file->last_symbol_at > file_desc->pos_p) && (size - readb) > 0) {
+				buf[buf_p++] = file_desc->curr_block->memory[file_desc->pos_p++];
+				readb++;
+				if (file_desc->pos_p >= BLOCK_SIZE) {
+					if (file_desc->block_p + 1 > file_desc->file->block_count) {
+						break;
+					}
+					file_desc->pos_p = 0;
+					file_desc->block_p++;
+					file_desc->curr_block = file_desc->curr_block->next;
+				}
+		}
+		return readb;
+	}
+	ufs_error_code = UFS_ERR_NO_FILE;
 	return -1;
 }
 
 int
 ufs_close(int fd)
 {
-	if (fd <= file_descriptor_count && fd > 0) {
+	if (fd <= file_descriptor_count && fd > 0 && file_descriptors[fd - 1] != NULL) {
 		file_descriptors[fd - 1]->file->refs--;
-		// if (file_descriptors[fd - 1]->file->refs == 0) {
-		// 	// TODO: Free the memory occupied by the file
-		// 	free(file_descriptors[fd - 1]->file->block_list);
-		// 	free(file_descriptors[fd - 1]->file->name);
-		// 	struct file* prev = file_descriptors[fd - 1]->file->prev;
-		// 	struct file* next = file_descriptors[fd - 1]->file->next;
-		// 	if (prev != NULL && next != NULL) {
-		// 		prev->next = next;
-		// 		next->prev = prev;
-		// 	} else if (prev != NULL) {
-		// 		prev->next = NULL;
-		// 	} else if (next != NULL) {
-		// 		next->prev = NULL;
-		// 	}
-		// 	if (file_list == file_descriptors[fd - 1]->file) {
-		// 		file_list = NULL;
-		// 	}
-		// 	free(file_descriptors[fd - 1]->file);
-		// } 
+		if (file_descriptors[fd - 1]->file->refs == 0 && file_descriptors[fd - 1]->file->is_ghost == 1) {
+			struct block* block = file_descriptors[fd - 1]->file->block_list;
+			while(block != NULL) {
+				free(block->memory);
+				block->prev = NULL;
+				struct block* temp = block;
+				block = block->next;
+				free(temp);
+			}
+			free(file_descriptors[fd - 1]->file->name);
+			free(file_descriptors[fd - 1]->file);
+		} 
 		free(file_descriptors[fd - 1]);
 		file_descriptors[fd - 1] = NULL;
 		return 0;
@@ -205,13 +265,52 @@ ufs_close(int fd)
 int
 ufs_delete(const char *filename)
 {
-	/* IMPLEMENT THIS FUNCTION */
-	(void)filename;
-	ufs_error_code = UFS_ERR_NOT_IMPLEMENTED;
+	for (struct file* curr_file = file_list; curr_file != NULL; curr_file = file_list->next) {
+		if (strcmp(curr_file->name, filename) == 0) {
+			struct file* prev = curr_file->prev;
+			struct file* next = curr_file->next;
+			if (prev != NULL && next != NULL) {
+				prev->next = next;
+				next->prev = prev;
+			} else if (prev != NULL) {
+				prev->next = NULL;
+			} else if (next != NULL) {
+				next->prev = NULL;
+			}
+			if (file_list == curr_file) {
+				file_list = next;
+			}
+			curr_file->next = NULL;
+			curr_file->prev = NULL;
+			curr_file->is_ghost = 1;
+			if (curr_file->refs == 0) {
+				struct block* block = curr_file->block_list;
+				while(block != NULL) {
+					free(block->memory);
+					struct block* temp = block;
+					block = block->next;
+					free(temp);
+				}
+				free(curr_file->name);
+				free(curr_file);
+			}
+			return 0;
+		}
+	}
+	ufs_error_code = UFS_ERR_NO_FILE;
 	return -1;
 }
 
 void
 ufs_destroy(void)
 {
+	for (struct file* curr_file = file_list; curr_file != NULL; curr_file = file_list) {
+		ufs_delete(curr_file->name);
+	}
+	for (int i = 0; i < file_descriptor_capacity; i++) {
+		if (file_descriptors[i] != NULL) {
+			ufs_close(i + 1);
+		}
+	}
+	free(file_descriptors);
 }
