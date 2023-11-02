@@ -49,6 +49,7 @@ struct file {
 	
 	int block_count;
 	int last_symbol_at;
+	int occupied;
 };
 
 /** List of all files. */
@@ -310,6 +311,55 @@ ufs_delete(const char *filename)
 				}
 				free(curr_file->name);
 				free(curr_file);
+			}
+			return 0;
+		}
+	}
+	ufs_error_code = UFS_ERR_NO_FILE;
+	return -1;
+}
+
+int
+ufs_resize(int fd, size_t new_size) {
+	if (fd <= file_descriptor_count && fd > 0 && file_descriptors[fd - 1] != NULL) {
+		struct filedesc* file_desc = file_descriptors[fd - 1];
+		if (file_desc->file_permission != UFS_READ_WRITE && file_desc->file_permission != UFS_WRITE_ONLY) {
+			ufs_error_code = UFS_ERR_NO_PERMISSION;
+			return -1;
+		}
+		if ((size_t) file_desc->file->block_count * BLOCK_SIZE + file_desc->file->last_symbol_at <= new_size) {
+			if (new_size > MAX_FILE_SIZE) {
+				ufs_error_code = UFS_ERR_NO_MEM;
+				return -1;
+			}
+			return 0;
+		} else if ((size_t) file_desc->file->block_count * BLOCK_SIZE + file_desc->file->last_symbol_at > new_size) {
+			// Check number of blocks
+			int number_of_blocks = (new_size / 512);
+			int last_pos = new_size % 512;
+			if (number_of_blocks < file_desc->file->block_count) {
+				int diff = file_desc->file->block_count - number_of_blocks; 
+				for (int i = 0; i < diff; i++) {
+					file_desc->file->last_block = file_desc->file->last_block->prev;
+					free(file_desc->file->last_block->next->memory);
+					free(file_desc->file->last_block->next);
+					file_desc->file->last_block->next = NULL;
+					file_desc->file->block_count--;
+				}
+			} 
+			file_desc->file->last_symbol_at = last_pos;
+			file_desc->file->occupied = last_pos;
+			for (int i = 0; i < file_descriptor_count; i++) {
+				if (file_descriptors[i] != NULL && file_descriptors[i]->file->block_list == file_desc->file->block_list) {
+					if (file_descriptors[i]->block_p > file_desc->file->block_count) {
+						file_descriptors[i]->block_p = file_desc->file->block_count;
+						file_descriptors[i]->curr_block = file_desc->file->last_block;
+						file_descriptors[i]->pos_p = file_desc->file->last_symbol_at;
+					}
+					else if (file_descriptors[i]->pos_p > file_desc->file->last_symbol_at) {
+						file_descriptors[i]->pos_p = file_desc->file->last_symbol_at;
+					}
+				}
 			}
 			return 0;
 		}
