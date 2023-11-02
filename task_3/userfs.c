@@ -60,7 +60,7 @@ struct filedesc {
 	int block_p;
 	int pos_p;
 	/* PUT HERE OTHER MEMBERS */
-
+	enum open_flags file_permission;
 };
 
 /**
@@ -80,7 +80,7 @@ static int file_descriptor_capacity = 0;
  * @retval > 0 File descriptor to the given file
 */
 int 
-initialize_fd(struct file* file) 
+initialize_fd(struct file* file, enum open_flags permission) 
 {
 	file->refs++;
 	// initialize list of file descriptors
@@ -92,6 +92,17 @@ initialize_fd(struct file* file)
 		file_descriptors = realloc(file_descriptors, file_descriptor_capacity * sizeof(struct filedesc*));
 	}
 	file_descriptors[file_descriptor_count] = calloc(sizeof(struct filedesc), 1);
+	switch (permission) {
+		case UFS_READ_ONLY:
+			file_descriptors[file_descriptor_count]->file_permission = UFS_READ_ONLY;
+			break;
+		case UFS_WRITE_ONLY:
+			file_descriptors[file_descriptor_count]->file_permission = UFS_WRITE_ONLY;
+			break;
+		case 0 || UFS_READ_WRITE || UFS_CREATE:
+		default:
+			file_descriptors[file_descriptor_count]->file_permission = UFS_READ_WRITE;
+	}
 	file_descriptors[file_descriptor_count++]->file = file;
 	return file_descriptor_count;
 }
@@ -109,7 +120,7 @@ create_file(const char* new_file_name)
 	size_t filename_size = strlen(new_file_name) + 1;
 	new_file->name = malloc(sizeof(char) * filename_size);
 	strcpy(new_file->name, new_file_name);
-	int fd = initialize_fd(new_file);
+	int fd = initialize_fd(new_file, UFS_READ_WRITE);
 	if (file_list == NULL) {
 		// If no files in the list we creating new one and assigning it to the file_list pointer
 		file_list = new_file;
@@ -134,11 +145,11 @@ ufs_errno()
 
 int
 ufs_open(const char *filename, int flags)
-{
+{	
 	struct file* curr_file = file_list;
 	while (curr_file != NULL) {
 		if (strcmp(curr_file->name, filename) == 0) {
-			int fd = initialize_fd(curr_file);
+			int fd = initialize_fd(curr_file, flags);
 			return fd;
 		}
 		curr_file = curr_file->next;
@@ -158,6 +169,10 @@ ufs_write(int fd, const char *buf, size_t size)
 {
 	if (fd <= file_descriptor_count && fd > 0 && file_descriptors[fd - 1] != NULL) {
 		struct filedesc* file_desc = file_descriptors[fd - 1];
+		if (file_desc->file_permission != UFS_READ_WRITE && file_desc->file_permission != UFS_WRITE_ONLY) {
+			ufs_error_code = UFS_ERR_NO_PERMISSION;
+			return -1;
+		}
 		int new_block_created = 0;
 		if (file_desc->block_p * BLOCK_SIZE + file_desc->pos_p + size <= MAX_FILE_SIZE) {
 			if (file_desc->file->block_list == NULL) {
@@ -211,6 +226,10 @@ ufs_read(int fd, char *buf, size_t size)
 {
 	if (fd <= file_descriptor_count && fd > 0 && file_descriptors[fd - 1] != NULL) {
 		struct filedesc* file_desc = file_descriptors[fd - 1];
+		if (file_desc->file_permission != UFS_READ_WRITE && file_desc->file_permission != UFS_READ_ONLY) {
+			ufs_error_code = UFS_ERR_NO_PERMISSION;
+			return -1;
+		}
 		int buf_p = 0;
 		int readb = 0;
 		if (file_desc->curr_block == NULL) {
