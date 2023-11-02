@@ -100,7 +100,8 @@ initialize_fd(struct file* file, enum open_flags permission)
 		case UFS_WRITE_ONLY:
 			file_descriptors[file_descriptor_count]->file_permission = UFS_WRITE_ONLY;
 			break;
-		case 0 || UFS_READ_WRITE || UFS_CREATE:
+		case UFS_READ_WRITE:
+		case UFS_CREATE:
 		default:
 			file_descriptors[file_descriptor_count]->file_permission = UFS_READ_WRITE;
 	}
